@@ -16,6 +16,7 @@ from features.auth.router import router as auth_router
 from features.navigation.router import router as nav_router
 from features.crowd.router import router as crowd_router
 from features.incidents.router import router as incidents_router
+from features.simulation.router import router as simulation_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,6 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(nav_router, prefix="/api/v1")
     app.include_router(crowd_router, prefix="/api/v1")
     app.include_router(incidents_router, prefix="/api/v1")
+    app.include_router(simulation_router, prefix="/api/v1")
 
     register_exception_handlers(app)
 
