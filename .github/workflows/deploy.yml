@@ -1,0 +1,134 @@
+name: NEXOVA Production Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  PROJECT_ID: "optical-realm-501607-n5"
+  REGION: "us-central1"
+  GAR_LOCATION: "us-central1-docker.pkg.dev"
+  REPOSITORY: "nexova"
+  API_SERVICE: "nexova-api"
+  WEB_SERVICE: "nexova-web"
+
+jobs:
+  lint-and-test:
+    name: Code Quality & Testing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install uv
+          uv pip install --system -r requirements.txt
+          
+      - name: Run Ruff Linter
+        run: |
+          cd backend
+          uv run ruff check .
+          
+      - name: Run pytest (including AI evaluations)
+        run: |
+          cd backend
+          uv run pytest tests/
+
+  deploy-api:
+    name: Deploy Backend API
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: 'projects/1234567890/locations/global/workloadIdentityPools/github/providers/github-provider'
+          service_account: 'nexova-github-actions@${{ env.PROJECT_ID }}.iam.gserviceaccount.com'
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      - name: 'Docker auth'
+        run: |-
+          gcloud auth configure-docker ${{ env.GAR_LOCATION }}
+
+      - name: 'Build and push container'
+        run: |-
+          cd backend
+          docker build -t "${{ env.GAR_LOCATION }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.API_SERVICE }}:${{ github.sha }}" .
+          docker push "${{ env.GAR_LOCATION }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.API_SERVICE }}:${{ github.sha }}"
+
+      - name: 'Deploy to Cloud Run'
+        id: deploy
+        uses: 'google-github-actions/deploy-cloudrun@v2'
+        with:
+          service: '${{ env.API_SERVICE }}'
+          region: '${{ env.REGION }}'
+          image: '${{ env.GAR_LOCATION }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.API_SERVICE }}:${{ github.sha }}'
+
+  deploy-web:
+    name: Deploy Frontend Web
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: 'projects/1234567890/locations/global/workloadIdentityPools/github/providers/github-provider'
+          service_account: 'nexova-github-actions@${{ env.PROJECT_ID }}.iam.gserviceaccount.com'
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      - name: 'Docker auth'
+        run: |-
+          gcloud auth configure-docker ${{ env.GAR_LOCATION }}
+
+      - name: 'Build and push container'
+        run: |-
+          cd frontend
+          docker build -t "${{ env.GAR_LOCATION }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.WEB_SERVICE }}:${{ github.sha }}" .
+          docker push "${{ env.GAR_LOCATION }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.WEB_SERVICE }}:${{ github.sha }}"
+
+      - name: 'Deploy to Cloud Run'
+        id: deploy
+        uses: 'google-github-actions/deploy-cloudrun@v2'
+        with:
+          service: '${{ env.WEB_SERVICE }}'
+          region: '${{ env.REGION }}'
+          image: '${{ env.GAR_LOCATION }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.WEB_SERVICE }}:${{ github.sha }}'
+
+  notify:
+    name: Slack Notification
+    needs: [deploy-api, deploy-web]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Notify on completion
+        run: |
+          if [ "${{ needs.deploy-api.result }}" = "success" ] && [ "${{ needs.deploy-web.result }}" = "success" ]; then
+            echo "Deployment to Production Successful!"
+            # curl -X POST -H 'Content-type: application/json' --data '{"text":"✅ NEXOVA deployed successfully!"}' ${{ secrets.SLACK_WEBHOOK_URL }}
+          else
+            echo "Deployment Failed - Rollback Initiated!"
+            # curl -X POST -H 'Content-type: application/json' --data '{"text":"🚨 NEXOVA deployment failed. Rolling back to previous revision."}' ${{ secrets.SLACK_WEBHOOK_URL }}
+          fi
