@@ -1,0 +1,92 @@
+name: NEXOVA Production CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  backend-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+    - name: Install dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    - name: Run Ruff Linting
+      run: |
+        cd backend
+        ruff check .
+    - name: Run Bandit Security Check
+      run: |
+        cd backend
+        bandit -r . -c pyproject.toml
+    - name: Run Pytest
+      run: |
+        cd backend
+        pytest --cov=core --cov=features --cov=intelligence
+
+  frontend-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: 'frontend/package-lock.json'
+    - name: Install dependencies
+      run: |
+        cd frontend
+        npm ci
+    - name: Run ESLint
+      run: |
+        cd frontend
+        npm run lint
+    - name: Install Playwright Browsers
+      run: |
+        cd frontend
+        npx playwright install --with-deps
+    - name: Run Playwright tests
+      run: |
+        cd frontend
+        npx playwright test
+
+  deploy:
+    needs: [backend-test, frontend-test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+    - name: Build and push backend container
+      run: |
+        gcloud builds submit --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/nexova-backend ./backend
+    - name: Deploy backend to Cloud Run
+      run: |
+        gcloud run deploy nexova-backend \
+          --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/nexova-backend \
+          --platform managed \
+          --region us-central1 \
+          --allow-unauthenticated \
+          --set-env-vars="GEMINI_MODEL=gemini-2.5-pro,BACKEND_ENV=production"
+    - name: Deploy frontend to Vercel or Firebase Hosting
+      # Uses firebase tools in a real deployment
+      run: |
+        cd frontend
+        npm install -g firebase-tools
+        firebase deploy --only hosting --token ${{ secrets.FIREBASE_TOKEN }}
