@@ -1,0 +1,26 @@
+# Backend Docker ignore
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+.env
+.env.local
+.git/
+.gitignore
+*.md
+Makefile
+tests/
+docker-compose*.yml
+Dockerfile
+.dockerignore
