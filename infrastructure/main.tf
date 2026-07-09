@@ -627,6 +627,80 @@ resource "google_monitoring_alert_policy" "api_latency" {
   depends_on = [google_project_service.apis["monitoring.googleapis.com"]]
 }
 
+# ---- Load Balancer & Custom Domain ----
+
+resource "google_compute_global_address" "default" {
+  name = "nexova-lb-ip"
+}
+
+resource "google_compute_region_network_endpoint_group" "web_neg" {
+  name                  = "nexova-web-neg"
+  network_endpoint_type = "SERVERLESS"
+  region                = var.region
+  cloud_run {
+    service = google_cloud_run_v2_service.web.name
+  }
+}
+
+resource "google_compute_backend_service" "web_backend" {
+  name        = "nexova-web-backend"
+  protocol    = "HTTPS"
+  port_name   = "http"
+  timeout_sec = 30
+  
+  backend {
+    group = google_compute_region_network_endpoint_group.web_neg.id
+  }
+}
+
+resource "google_compute_url_map" "default" {
+  name            = "nexova-url-map"
+  default_service = google_compute_backend_service.web_backend.id
+}
+
+resource "google_compute_managed_ssl_certificate" "default" {
+  name = "nexova-ssl-cert"
+
+  managed {
+    domains = ["nexova.tirthkosambia.com"] # Replace with actual domain later
+  }
+}
+
+resource "google_compute_target_https_proxy" "default" {
+  name             = "nexova-https-proxy"
+  url_map          = google_compute_url_map.default.id
+  ssl_certificates = [google_compute_managed_ssl_certificate.default.id]
+}
+
+resource "google_compute_global_forwarding_rule" "default" {
+  name                  = "nexova-lb-forwarding-rule"
+  target                = google_compute_target_https_proxy.default.id
+  port_range            = "443"
+  ip_address            = google_compute_global_address.default.address
+}
+
+# Redirect HTTP to HTTPS
+resource "google_compute_url_map" "http_redirect" {
+  name = "nexova-http-redirect"
+  default_url_redirect {
+    https_redirect         = true
+    strip_query            = false
+    redirect_response_code = "MOVED_PERMANENTLY_DEFAULT"
+  }
+}
+
+resource "google_compute_target_http_proxy" "http_redirect" {
+  name    = "nexova-http-proxy"
+  url_map = google_compute_url_map.http_redirect.id
+}
+
+resource "google_compute_global_forwarding_rule" "http_redirect" {
+  name       = "nexova-http-forwarding-rule"
+  target     = google_compute_target_http_proxy.http_redirect.id
+  port_range = "80"
+  ip_address = google_compute_global_address.default.address
+}
+
 # ---- Outputs ----
 
 output "api_url" {
@@ -635,8 +709,13 @@ output "api_url" {
 }
 
 output "web_url" {
-  description = "NEXOVA Web URL"
+  description = "NEXOVA Web URL (Cloud Run Direct)"
   value       = google_cloud_run_v2_service.web.uri
+}
+
+output "load_balancer_ip" {
+  description = "Global IP Address for the Load Balancer (configure your DNS A record to point to this)"
+  value       = google_compute_global_address.default.address
 }
 
 output "artifact_registry" {
