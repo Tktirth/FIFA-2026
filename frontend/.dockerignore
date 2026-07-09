@@ -1,0 +1,20 @@
+# Frontend Docker ignore
+node_modules/
+.next/
+out/
+.vercel/
+.turbo/
+*.tsbuildinfo
+coverage/
+playwright-report/
+test-results/
+.env
+.env.local
+.env.*.local
+.git/
+.gitignore
+*.md
+Dockerfile
+.dockerignore
+docker-compose*.yml
+tests/

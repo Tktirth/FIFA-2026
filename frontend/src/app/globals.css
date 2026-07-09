@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+@theme {
+  /* Premium Apple/Linear inspired typography */
+  --font-sans: "Inter", system-ui, sans-serif;
+  
+  /* OKLCH Color Space Palette - Stripe/Linear Aesthetic */
+  /* No glowing neon - just precise, high-end colors */
+  
+  --color-background: #ffffff; /* Pure clean white */
+  --color-foreground: #171717; /* Deep gray/almost black */
+  
+  --color-card: #ffffff;
+  --color-card-foreground: #171717;
+  
+  --color-popover: #ffffff;
+  --color-popover-foreground: #171717;
+  
+  /* Primary brand color - A deep, refined blue/slate */
+  --color-primary: #1e3a8a; 
+  --color-primary-foreground: #ffffff;
+  
+  --color-secondary: #f1f5f9;
+  --color-secondary-foreground: #1e3a8a;
+  
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #525252;
+  
+  --color-accent: #f1f5f9;
+  --color-accent-foreground: #171717;
+  
+  --color-destructive: #b91c1c;
+  --color-destructive-foreground: #ffffff;
+  
+  --color-border: #e2e8f0;
+  --color-input: #e2e8f0;
+  --color-ring: #1e3a8a;
+  
+  --radius-lg: 0.75rem;
+  --radius-md: calc(var(--radius-lg) - 2px);
+  --radius-sm: calc(var(--radius-md) - 2px);
+}
+
+/* Base layer overrides for clean baseline */
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased selection:bg-primary/10 selection:text-primary;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* Utilities for glassmorphism and subtle premium effects */
+@layer utilities {
+  .glass {
+    @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-sm;
+  }
+  
+  .glass-dark {
+    @apply bg-black/40 backdrop-blur-md border border-white/10 shadow-sm;
+  }
+
+  .premium-shadow {
+    box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.04), 0 2px 8px -2px rgba(0, 0, 0, 0.02);
+  }
+}
