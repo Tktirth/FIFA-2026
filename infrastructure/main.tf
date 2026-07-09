@@ -627,6 +627,80 @@ resource "google_monitoring_alert_policy" "api_latency" {
   depends_on = [google_project_service.apis["monitoring.googleapis.com"]]
 }
 
+# ---- Cloud Armor Security Policy ----
+
+resource "google_compute_security_policy" "waf_policy" {
+  name        = "nexova-waf-policy"
+  description = "Cloud Armor WAF policy for NEXOVA"
+  
+  rule {
+    action   = "allow"
+    priority = "2147483647"
+    match {
+      versioned_expr = "SRC_IPS_V1"
+      config {
+        src_ip_ranges = ["*"]
+      }
+    }
+    description = "Default allow"
+  }
+
+  rule {
+    action   = "deny(403)"
+    priority = "1000"
+    match {
+      expr {
+        expression = "evaluatePreconfiguredExpr('sqli-v33-stable')"
+      }
+    }
+    description = "Block SQL injection"
+  }
+
+  rule {
+    action   = "deny(403)"
+    priority = "1001"
+    match {
+      expr {
+        expression = "evaluatePreconfiguredExpr('xss-v33-stable')"
+      }
+    }
+    description = "Block XSS"
+  }
+
+  rule {
+    action   = "deny(403)"
+    priority = "1002"
+    match {
+      expr {
+        expression = "evaluatePreconfiguredExpr('lfi-v33-stable')"
+      }
+    }
+    description = "Block Local File Inclusion"
+  }
+
+  rule {
+    action   = "deny(403)"
+    priority = "1003"
+    match {
+      expr {
+        expression = "evaluatePreconfiguredExpr('rce-v33-stable')"
+      }
+    }
+    description = "Block Remote Code Execution"
+  }
+
+  rule {
+    action   = "deny(403)"
+    priority = "1004"
+    match {
+      expr {
+        expression = "evaluatePreconfiguredExpr('scannerdetection-v33-stable')"
+      }
+    }
+    description = "Block Scanners"
+  }
+}
+
 # ---- Load Balancer & Custom Domain ----
 
 resource "google_compute_global_address" "default" {
@@ -647,6 +721,7 @@ resource "google_compute_backend_service" "web_backend" {
   protocol    = "HTTPS"
   port_name   = "http"
   timeout_sec = 30
+  security_policy = google_compute_security_policy.waf_policy.id
   
   backend {
     group = google_compute_region_network_endpoint_group.web_neg.id
