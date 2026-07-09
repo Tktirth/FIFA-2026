@@ -568,3 +568,92 @@ resource "google_secret_manager_secret_iam_member" "api_secret_access" {
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.nexova_api.email}"
 }
+resource "google_monitoring_dashboard" "nexova_dashboard" {
+  project        = var.project_id
+  dashboard_json = <<EOF
+{
+  "displayName": "NEXOVA Production Metrics",
+  "gridLayout": {
+    "columns": "2",
+    "widgets": [
+      {
+        "title": "Cloud Run Request Count",
+        "xyChart": {
+          "dataSets": [
+            {
+              "timeSeriesQuery": {
+                "timeSeriesFilter": {
+                  "filter": "metric.type=\"run.googleapis.com/request_count\" resource.type=\"cloud_run_revision\" resource.label.\"service_name\"=\"nexova-api\"",
+                  "aggregation": {
+                    "perSeriesAligner": "ALIGN_RATE",
+                    "crossSeriesReducer": "REDUCE_SUM",
+                    "alignmentPeriod": "60s"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "title": "Cloud Run Latency (99th Percentile)",
+        "xyChart": {
+          "dataSets": [
+            {
+              "timeSeriesQuery": {
+                "timeSeriesFilter": {
+                  "filter": "metric.type=\"run.googleapis.com/request_latencies\" resource.type=\"cloud_run_revision\" resource.label.\"service_name\"=\"nexova-api\"",
+                  "aggregation": {
+                    "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                    "crossSeriesReducer": "REDUCE_NONE",
+                    "alignmentPeriod": "60s"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "title": "Firestore Document Read Ops",
+        "xyChart": {
+          "dataSets": [
+            {
+              "timeSeriesQuery": {
+                "timeSeriesFilter": {
+                  "filter": "metric.type=\"firestore.googleapis.com/document/read_ops_count\" resource.type=\"firestore_instance\"",
+                  "aggregation": {
+                    "perSeriesAligner": "ALIGN_RATE",
+                    "crossSeriesReducer": "REDUCE_SUM",
+                    "alignmentPeriod": "60s"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "title": "Firestore Document Write Ops",
+        "xyChart": {
+          "dataSets": [
+            {
+              "timeSeriesQuery": {
+                "timeSeriesFilter": {
+                  "filter": "metric.type=\"firestore.googleapis.com/document/write_ops_count\" resource.type=\"firestore_instance\"",
+                  "aggregation": {
+                    "perSeriesAligner": "ALIGN_RATE",
+                    "crossSeriesReducer": "REDUCE_SUM",
+                    "alignmentPeriod": "60s"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
+EOF
+}
