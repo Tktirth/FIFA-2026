@@ -80,6 +80,7 @@ resource "google_project_service" "apis" {
     "storage.googleapis.com",
     "iam.googleapis.com",
     "cloudresourcemanager.googleapis.com",
+    "cloudscheduler.googleapis.com",
   ])
 
   service            = each.key
@@ -303,8 +304,8 @@ resource "google_storage_bucket" "nexova_assets" {
 # ---- Cloud Run Services ----
 
 resource "google_cloud_run_v2_service" "api" {
-  name     = "nexova-api"
-  location = var.region
+  name                = "nexova-api"
+  location            = var.region
   deletion_protection = false
 
   template {
@@ -407,8 +408,8 @@ resource "google_cloud_run_v2_service" "api" {
 }
 
 resource "google_cloud_run_v2_service" "web" {
-  name     = "nexova-web"
-  location = var.region
+  name                = "nexova-web"
+  location            = var.region
   deletion_protection = false
 
   template {
@@ -472,6 +473,91 @@ resource "google_cloud_run_v2_service" "web" {
 }
 
 # ---- Make Services Public ----
+
+# ---- Cloud Run Simulation Job ----
+
+resource "google_cloud_run_v2_job" "simulation" {
+  name                = "nexova-simulation"
+  location            = var.region
+  deletion_protection = false
+
+  template {
+    template {
+      service_account = google_service_account.nexova_api.email
+
+      containers {
+        image = "${var.region}-docker.pkg.dev/${var.project_id}/nexova/nexova-api:latest"
+        # Run 30 iterations with a 2-second delay (runs for approx 60 seconds)
+        command = ["python", "simulation/engine.py", "--iterations", "30", "--delay", "2"]
+
+        resources {
+          limits = {
+            cpu    = "1"
+            memory = "512Mi"
+          }
+        }
+
+        env {
+          name  = "GCP_PROJECT_ID"
+          value = var.project_id
+        }
+        env {
+          name  = "GCP_REGION"
+          value = var.region
+        }
+        env {
+          name = "SECRET_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secret_key.secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].template[0].containers[0].image,
+    ]
+  }
+
+  depends_on = [
+    google_project_service.apis["run.googleapis.com"]
+  ]
+}
+
+resource "google_project_iam_member" "scheduler_run_invoker" {
+  project = var.project_id
+  role    = "roles/run.invoker"
+  member  = "serviceAccount:${google_service_account.nexova_api.email}"
+}
+
+resource "google_cloud_scheduler_job" "simulation_trigger" {
+  name             = "nexova-simulation-trigger"
+  description      = "Triggers the NEXOVA simulation job every minute"
+  schedule         = "* * * * *"
+  time_zone        = "UTC"
+  attempt_deadline = "320s"
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://${var.region}-run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/nexova-simulation:run"
+
+    oauth_token {
+      service_account_email = google_service_account.nexova_api.email
+    }
+  }
+
+  depends_on = [
+    google_cloud_run_v2_job.simulation,
+    google_project_iam_member.scheduler_run_invoker,
+    google_project_service.apis["cloudscheduler.googleapis.com"]
+  ]
+}
+
 
 resource "google_cloud_run_v2_service_iam_member" "api_public" {
   name     = google_cloud_run_v2_service.api.name
