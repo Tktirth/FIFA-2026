@@ -1,0 +1,177 @@
+# ============================================
+# NEXOVA — Cloud Build Pipeline
+# ============================================
+# Builds and deploys backend + frontend to Cloud Run
+# Triggered by push to main branch
+# ============================================
+
+steps:
+  # ---- Step 1: Lint Backend ----
+  - name: 'python:3.12-slim'
+    id: 'lint-backend'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        cd backend
+        pip install ruff mypy --quiet
+        ruff check .
+        ruff format --check .
+    waitFor: ['-']
+
+  # ---- Step 2: Lint Frontend ----
+  - name: 'node:20-slim'
+    id: 'lint-frontend'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        cd frontend
+        npm ci --ignore-scripts
+        npm run lint
+        npm run type-check
+    waitFor: ['-']
+
+  # ---- Step 3: Test Backend ----
+  - name: 'python:3.12-slim'
+    id: 'test-backend'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        cd backend
+        python -m venv /tmp/venv
+        . /tmp/venv/bin/activate
+        pip install -r requirements.txt --quiet
+        python -m pytest tests/ -v --cov=. --cov-report=xml
+    waitFor: ['lint-backend']
+
+  # ---- Step 4: Build Backend Docker Image ----
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-backend'
+    args:
+      - 'build'
+      - '-t'
+      - '${_DOCKER_REGISTRY}/${PROJECT_ID}/${_DOCKER_REPOSITORY}/nexova-api:${SHORT_SHA}'
+      - '-t'
+      - '${_DOCKER_REGISTRY}/${PROJECT_ID}/${_DOCKER_REPOSITORY}/nexova-api:latest'
+      - '-f'
+      - 'backend/Dockerfile'
+      - 'backend'
+    waitFor: ['test-backend']
+
+  # ---- Step 5: Build Frontend Docker Image ----
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-frontend'
+    args:
+      - 'build'
+      - '-t'
+      - '${_DOCKER_REGISTRY}/${PROJECT_ID}/${_DOCKER_REPOSITORY}/nexova-web:${SHORT_SHA}'
+      - '-t'
+      - '${_DOCKER_REGISTRY}/${PROJECT_ID}/${_DOCKER_REPOSITORY}/nexova-web:latest'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_API_URL=${_API_URL}'
+      - '-f'
+      - 'frontend/Dockerfile'
+      - 'frontend'
+    waitFor: ['lint-frontend']
+
+  # ---- Step 6: Push Backend Image ----
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-backend'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_DOCKER_REGISTRY}/${PROJECT_ID}/${_DOCKER_REPOSITORY}/nexova-api'
+    waitFor: ['build-backend']
+
+  # ---- Step 7: Push Frontend Image ----
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-frontend'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_DOCKER_REGISTRY}/${PROJECT_ID}/${_DOCKER_REPOSITORY}/nexova-web'
+    waitFor: ['build-frontend']
+
+  # ---- Step 8: Deploy Backend to Cloud Run ----
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'deploy-backend'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_BACKEND_SERVICE}'
+      - '--image'
+      - '${_DOCKER_REGISTRY}/${PROJECT_ID}/${_DOCKER_REPOSITORY}/nexova-api:${SHORT_SHA}'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--min-instances'
+      - '${_MIN_INSTANCES}'
+      - '--max-instances'
+      - '${_MAX_INSTANCES}'
+      - '--memory'
+      - '1Gi'
+      - '--cpu'
+      - '1'
+      - '--timeout'
+      - '300'
+      - '--set-env-vars'
+      - 'BACKEND_ENV=production,GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${_REGION}'
+      - '--cpu-boost'
+    waitFor: ['push-backend']
+
+  # ---- Step 9: Deploy Frontend to Cloud Run ----
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'deploy-frontend'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_FRONTEND_SERVICE}'
+      - '--image'
+      - '${_DOCKER_REGISTRY}/${PROJECT_ID}/${_DOCKER_REPOSITORY}/nexova-web:${SHORT_SHA}'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--min-instances'
+      - '0'
+      - '--max-instances'
+      - '${_MAX_INSTANCES}'
+      - '--memory'
+      - '512Mi'
+      - '--cpu'
+      - '1'
+      - '--timeout'
+      - '60'
+      - '--cpu-boost'
+    waitFor: ['push-frontend']
+
+# ---- Substitution Variables ----
+substitutions:
+  _DOCKER_REGISTRY: 'us-central1-docker.pkg.dev'
+  _DOCKER_REPOSITORY: 'nexova'
+  _REGION: 'us-central1'
+  _BACKEND_SERVICE: 'nexova-api'
+  _FRONTEND_SERVICE: 'nexova-web'
+  _MIN_INSTANCES: '0'
+  _MAX_INSTANCES: '10'
+  _API_URL: 'https://nexova-api-HASH.run.app'
+
+# ---- Build Options ----
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+  dynamic_substitutions: true
+
+# ---- Images to Push ----
+images:
+  - '${_DOCKER_REGISTRY}/${PROJECT_ID}/${_DOCKER_REPOSITORY}/nexova-api:${SHORT_SHA}'
+  - '${_DOCKER_REGISTRY}/${PROJECT_ID}/${_DOCKER_REPOSITORY}/nexova-api:latest'
+  - '${_DOCKER_REGISTRY}/${PROJECT_ID}/${_DOCKER_REPOSITORY}/nexova-web:${SHORT_SHA}'
+  - '${_DOCKER_REGISTRY}/${PROJECT_ID}/${_DOCKER_REPOSITORY}/nexova-web:latest'
+
+timeout: '1800s'
