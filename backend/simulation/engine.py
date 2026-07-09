@@ -69,13 +69,17 @@ class SimulationEngine:
         await doc_ref.set(data)
         logger.info("simulate.incident", status="created", incident_type=data["type"], zone=data["zone_id"])
 
-    async def run(self, delay_seconds: int = 5):
+    async def run(self, delay_seconds: int = 5, iterations: int = 0):
         self.running = True
-        logger.info("simulation.start", delay=delay_seconds)
+        logger.info("simulation.start", delay=delay_seconds, iterations=iterations)
         try:
+            count = 0
             while self.running:
                 await self.generate_crowd_update()
                 await self.generate_incident()
+                count += 1
+                if iterations > 0 and count >= iterations:
+                    break
                 await asyncio.sleep(delay_seconds)
         except asyncio.CancelledError:
             logger.info("simulation.cancelled")
@@ -87,10 +91,11 @@ async def main():
     import argparse
     parser = argparse.ArgumentParser(description="NEXOVA Simulation Engine")
     parser.add_argument("--interval", type=int, default=5, help="Interval in seconds between updates")
+    parser.add_argument("--iterations", type=int, default=0, help="Number of iterations to run (0 for infinite)")
     args = parser.parse_args()
     
     engine = SimulationEngine()
-    await engine.run(args.interval)
+    await engine.run(args.interval, args.iterations)
 
 if __name__ == "__main__":
     asyncio.run(main())
