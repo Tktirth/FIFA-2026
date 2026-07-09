@@ -1,0 +1,21 @@
+{
+  "name": "NEXOVA: Stadium OS",
+  "short_name": "NEXOVA",
+  "description": "FIFA World Cup 2026 Intelligent Stadium Operating Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [
+    {
+      "src": "/globe.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/globe.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
